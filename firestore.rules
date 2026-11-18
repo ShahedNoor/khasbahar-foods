@@ -1,0 +1,60 @@
+rules_version = '2';
+
+// Khasbahar Foods security rules.
+// Admin access = a document exists at admins/{your-email} (create it by hand in the Firebase console).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()));
+    }
+
+    // Menu: everyone can read, only admins can change.
+    match /products/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Production cost: admins only (customers must never see this).
+    match /productCosts/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    // Delivery charge per district.
+    match /deliveryZones/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Orders: customers can only create a well-formed new order; admins manage them.
+    match /orders/{id} {
+      allow create: if request.resource.data.keys().hasOnly(
+                         ['customerName', 'phone', 'district', 'address', 'note', 'items',
+                          'subtotal', 'deliveryCharge', 'total', 'status', 'createdAt'])
+                    && request.resource.data.status == 'new'
+                    && request.resource.data.customerName is string
+                    && request.resource.data.customerName.size() > 0
+                    && request.resource.data.customerName.size() < 100
+                    && request.resource.data.phone is string
+                    && request.resource.data.phone.size() >= 11
+                    && request.resource.data.phone.size() <= 15
+                    && request.resource.data.address is string
+                    && request.resource.data.address.size() < 500
+                    && request.resource.data.note is string
+                    && request.resource.data.note.size() < 500
+                    && request.resource.data.items is list
+                    && request.resource.data.items.size() > 0
+                    && request.resource.data.items.size() <= 30
+                    && request.resource.data.total is number;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Admin list: you can only check your own entry; nobody can edit it from the website.
+    match /admins/{email} {
+      allow read: if signedIn() && request.auth.token.email.lower() == email;
+      allow write: if false;
+    }
+  }
+}
