@@ -3,7 +3,8 @@ import { useState } from "react";
 import { Btn, Notice, PageHead, Toggle } from "@/components/admin/ui";
 import { ProductImage } from "@/components/ProductCard";
 import { deleteProduct, getAdminProducts, saveProduct, seedDemoProducts, setProductAvailable } from "@/lib/data";
-import { compressImage, margin, taka } from "@/lib/format";
+import { margin, taka } from "@/lib/format";
+import { deleteProductImage, uploadProductImage } from "@/lib/upload";
 import type { AdminProduct } from "@/lib/types";
 import { useLoad } from "@/lib/useLoad";
 
@@ -99,6 +100,7 @@ function Editor({ initial, onClose, onSaved }: { initial: AdminProduct; onClose:
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [qty, setQty] = useState(50);
+  const [uploading, setUploading] = useState(false);
 
   const set = <K extends keyof AdminProduct>(k: K, v: AdminProduct[K]) => setP((x) => ({ ...x, [k]: v }));
   const num = (k: "sellPrice" | "produceCost" | "sort") => (e: React.ChangeEvent<HTMLInputElement>) => set(k, Number(e.target.value) || 0);
@@ -109,20 +111,33 @@ function Editor({ initial, onClose, onSaved }: { initial: AdminProduct; onClose:
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    set("image", await compressImage(f));
+    setUploading(true);
+    setErr("");
+    try {
+      set("image", await uploadProductImage(f));
+    } catch (x) {
+      setErr(x instanceof Error ? x.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setErr("");
-    try { await saveProduct(p); onSaved(); } catch (x) { setErr(x instanceof Error ? x.message : "Save failed"); } finally { setBusy(false); }
+    try {
+      await saveProduct(p);
+      if (initial.image && initial.image !== p.image) void deleteProductImage(initial.image);
+      onSaved();
+    } catch (x) { setErr(x instanceof Error ? x.message : "Save failed"); } finally { setBusy(false); }
   }
 
   async function remove() {
     if (!p.id || !confirm(`Delete "${p.name}" permanently? This can't be undone.`)) return;
     setBusy(true);
-    try { await deleteProduct(p.id); onSaved(); } finally { setBusy(false); }
+    try { await deleteProduct(p.id); void deleteProductImage(initial.image); onSaved(); } finally { setBusy(false); }
   }
 
   return (
@@ -169,10 +184,10 @@ function Editor({ initial, onClose, onSaved }: { initial: AdminProduct; onClose:
           <div className="grid gap-4 sm:grid-cols-[120px_1fr]">
             <div className="arch h-36 w-28 overflow-hidden bg-forest"><ProductImage p={p} /></div>
             <div className="space-y-3">
-              <L label="Photo" hint="Upload (auto-compressed) or paste an image link.">
-                <input type="file" accept="image/*" onChange={onFile} className="block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-forest file:px-4 file:py-2 file:text-cream" />
+              <L label="Photo" hint={uploading ? "Uploading to Cloudflare R2…" : "Upload (auto-compressed to WebP, stored on Cloudflare R2) or paste an image link."}>
+                <input type="file" accept="image/*" onChange={onFile} disabled={uploading} className="block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-forest file:px-4 file:py-2 file:text-cream" />
               </L>
-              <input placeholder="https://…" value={p.image.startsWith("data:") ? "" : p.image} onChange={(e) => set("image", e.target.value)} className="field" />
+              <input placeholder="https://…" value={p.image} onChange={(e) => set("image", e.target.value)} className="field" />
               {p.image && <button type="button" onClick={() => set("image", "")} className="text-xs underline underline-offset-4">Remove photo</button>}
             </div>
           </div>
@@ -189,7 +204,7 @@ function Editor({ initial, onClose, onSaved }: { initial: AdminProduct; onClose:
           {p.id ? <Btn type="button" variant="danger" onClick={remove} disabled={busy}>Delete</Btn> : <span />}
           <div className="flex gap-2">
             <Btn type="button" variant="ghost" onClick={onClose}>Cancel</Btn>
-            <Btn type="submit" disabled={busy}>{busy ? "Saving…" : "Save product"}</Btn>
+            <Btn type="submit" disabled={busy || uploading}>{busy ? "Saving…" : "Save product"}</Btn>
           </div>
         </div>
       </form>

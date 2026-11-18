@@ -41,7 +41,7 @@ Open http://localhost:3000. Until Firebase is connected, the shop shows **demo p
 | `orders` | admins | customers can only *create* | customer, items, totals, status |
 | `admins` | yourself | nobody (console only) | list of admin emails |
 
-Product photos are compressed in the browser and stored inside Firestore, so the free Spark plan is enough (no paid Storage needed).
+Product photos are compressed in the browser to WebP and uploaded via `/api/upload` to **Cloudflare R2** (configured with `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and `NEXT_PUBLIC_R2_PUBLIC_URL` in `.env.local`).
 
 ### Earnings
 
